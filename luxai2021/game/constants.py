@@ -94,3 +94,17 @@ LuxMatchConfigs_Default = {
     "statefulReplay": False,
     "parameters": GAME_CONSTANTS["PARAMETERS"],
 }
+
+# for replay in notebook 
+LuxMatchConfigs_Replay = {
+    "mapType": Constants.MAP_TYPES.EMPTY,
+    "storeReplay": True,
+    "seed": None,
+    "debug": False,
+    "debugDelay": 500,
+    "runProfiler": False,
+    "compressReplay": False,
+    "debugAnnotations": False,
+    "statefulReplay": False,
+    "parameters": GAME_CONSTANTS["PARAMETERS"],
+}

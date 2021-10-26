@@ -4,6 +4,9 @@ Implements the base class for a Lux environment
 import traceback
 import gym
 import os
+import copy
+import glob
+import random  
 from stable_baselines3.common.callbacks import BaseCallback
 
 from ..game.game import Game
@@ -76,7 +79,7 @@ class LuxEnvironment(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, configs, learning_agent, opponent_agent, replay_validate=None, replay_folder=None, replay_prefix="replay"):
+    def __init__(self, configs, learning_agent, opponent_agents, model_update_step_freq=None, replay_validate=None, replay_folder=None, replay_prefix="replay"):
         """
         THe initializer
         :param configs:
@@ -87,13 +90,20 @@ class LuxEnvironment(gym.Env):
 
         # Create the game
         self.game = Game(configs)
+        if "self-play" in opponent_agents.keys():
+            self.opponent_policy = "self-play"
+        else:
+            self.opponent_policy = list(opponent_agents.keys())[0]
+        print(f"Initial opponent policy: {self.opponent_policy}")
+    
+        opponent_agent = opponent_agents[self.opponent_policy]
         self.match_controller = MatchController(self.game, 
                                                 agents=[learning_agent, opponent_agent], 
                                                 replay_validate=replay_validate)
         
         self.replay_prefix = replay_prefix
         self.replay_folder = replay_folder
-
+        self.model_update_step_freq = model_update_step_freq
 
         self.action_space = []
         if hasattr( learning_agent, 'action_space' ):
@@ -104,8 +114,11 @@ class LuxEnvironment(gym.Env):
             self.observation_space = learning_agent.observation_space
 
         self.learning_agent = learning_agent
+        self.opponent_agents = opponent_agents
+        self.opponent_agent = opponent_agent
 
         self.current_step = 0
+        self.total_env_step = 0 
         self.match_generator = None
 
         self.last_observation_object = None
@@ -135,6 +148,7 @@ class LuxEnvironment(gym.Env):
                                         )
 
         self.current_step += 1
+        self.total_env_step += 1
 
         # Get the next observation
         is_new_turn = True
@@ -157,6 +171,15 @@ class LuxEnvironment(gym.Env):
 
         # Calculate reward for this step
         reward = self.learning_agent.get_reward(self.game, is_game_over, is_new_turn, is_game_error)
+
+        if self.model_update_step_freq != None:
+            # update opponent self-play model in training
+            if (self.total_env_step % self.model_update_step_freq == 0)&(self.opponent_policy=="self-play"):
+                self.model_update()
+            
+            # switch opponent policy in training
+            if (self.total_env_step % self.model_update_step_freq == 0):
+                self.switch_opponent_policy()
 
         return obs, reward, is_game_over, {}
 
@@ -218,3 +241,28 @@ class LuxEnvironment(gym.Env):
             is_game_error = True
 
         return is_game_error
+    
+    def model_update(self):
+        # models = glob.glob(f'models/rl_model_*_steps.zip')
+        if self.learning_agent.model != None:  # train env
+            self.opponent_agent.model = copy.deepcopy(self.learning_agent.model)
+            print(f"[STEP: {self.total_env_step}] Updated opponent model by learning agent model")
+    
+    def switch_opponent_policy(self):
+        
+        p = random.random()
+        current_opponent_policy = self.opponent_policy
+        if (p < 0.1)&("imitation" in self.opponent_agents.keys()):
+            new_opponent_policy = "imitation"
+        elif (0.1 <= p)&(p < 0.15)&("random" in self.opponent_agents.keys()):
+            new_opponent_policy = "random"      
+        elif (0.15 <= p)&("self-play" in self.opponent_agents.keys()):
+            new_opponent_policy = "self-play"
+        
+        if current_opponent_policy != new_opponent_policy:
+            self.opponent_policy = new_opponent_policy
+            self.opponent_agent = self.opponent_agents[self.opponent_policy]
+            print(f"[STEP: {self.total_env_step}] Switch opponent agent: {current_opponent_policy} -> {self.opponent_policy}")
+
+   
+
