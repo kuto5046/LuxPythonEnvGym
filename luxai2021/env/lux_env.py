@@ -79,7 +79,17 @@ class LuxEnvironment(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, configs, learning_agent, opponent_agents, model_update_step_freq=None, replay_validate=None, replay_folder=None, replay_prefix="replay"):
+    def __init__(
+        self, 
+        configs, 
+        learning_agent, 
+        opponent_agents, 
+        initial_opponent_policy="self-play", 
+        model_update_step_freq=None, 
+        replay_validate=None, 
+        replay_folder=None, 
+        replay_prefix="replay"
+        ):
         """
         THe initializer
         :param configs:
@@ -90,8 +100,8 @@ class LuxEnvironment(gym.Env):
 
         # Create the game
         self.game = Game(configs)
-        if "self-play" in opponent_agents.keys():
-            self.opponent_policy = "self-play"
+        if initial_opponent_policy in opponent_agents.keys():
+            self.opponent_policy = initial_opponent_policy
         else:
             self.opponent_policy = list(opponent_agents.keys())[0]
         print(f"Initial opponent policy: {self.opponent_policy}")
