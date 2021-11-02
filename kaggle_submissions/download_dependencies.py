@@ -34,5 +34,5 @@ def localize_package(git, branch, folder):
         # Remove temporary dir
         shutil.rmtree(t, ignore_errors=True)
 
-localize_package('https://github.com/glmcdona/LuxPythonEnvGym.git', 'main', 'luxai2021')
+localize_package('https://github.com/kuto5046/LuxPythonEnvGym.git', 'main', 'luxai2021')
 localize_package('https://github.com/DLR-RM/stable-baselines3.git', 'master', 'stable_baselines3')

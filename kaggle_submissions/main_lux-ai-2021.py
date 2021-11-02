@@ -17,10 +17,8 @@ if __name__ == "__main__":
     configs = LuxMatchConfigs_Default
 
     # Load the saved model
-    #model_id = 5403
-    #total_steps = int(48e6)
-    #model = PPO.load(f"models/rl_model_{model_id}_{total_steps}_steps.zip")
-    model = PPO.load(f"model.zip")
+    total_steps = 0
+    model = PPO.load(f"models/rl_model_{total_steps}_steps.zip")
     
     # Create a kaggle-remote opponent agent
     opponent = AgentFromStdInOut()
