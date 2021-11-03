@@ -7,6 +7,7 @@ import os
 import copy
 import glob
 import random  
+import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
 
 from ..game.game import Game
@@ -170,6 +171,7 @@ class LuxEnvironment(gym.Env):
         try:
             (unit, city_tile, team, is_new_turn) = next(self.match_generator)
 
+            # obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn, self.last_unit_obs)
             obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn)
             self.last_observation_object = (unit, city_tile, team, is_new_turn)
         except StopIteration:
@@ -277,7 +279,86 @@ class LuxEnvironment(gym.Env):
             self.opponent_agent = self.opponent_agents[self.opponent_policy]
             print(f"[STEP: {self.total_env_step}] Switch opponent agent: {current_opponent_policy} -> {self.opponent_policy}")
 
-   
+
+class StackObsWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.env = env
+        self.last_unit_obs = None 
+        
+    def step(self, action_code):
+        """
+        Take this action, then get the state at the next action
+        :param action_code:
+        :return:
+        """
+        # Decision for 1 unit or city
+        self.env.learning_agent.take_action(action_code,
+                                        self.game,
+                                        unit=self.env.last_observation_object[0],
+                                        city_tile=self.env.last_observation_object[1],
+                                        team=self.env.last_observation_object[2]
+                                        )
+
+        self.env.current_step += 1
+        self.env.total_env_step += 1
+
+        # Get the next observation
+        is_new_turn = True
+        is_game_over = False
+        is_game_error = False
+        try:
+            (unit, city_tile, team, is_new_turn) = next(self.env.match_generator)
+            self.last_unit_obs = self.env.learning_agent.last_unit_obs
+            obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn, self.last_unit_obs)
+            self.env.last_observation_object = (unit, city_tile, team, is_new_turn)
+        except StopIteration:
+            # The game episode is done.
+            is_game_over = True
+            obs = None
+        except GameStepFailedException:
+            # Game step failed, assign a game lost reward to not incentivise this
+            is_game_over = True
+            obs = None
+            is_game_error = True
+
+        # Calculate reward for this step
+        reward = self.env.learning_agent.get_reward(self.env.game, is_game_over, is_new_turn, is_game_error)
+
+        if self.env.model_update_step_freq != None:
+            # update opponent self-play model in training
+            if (self.env.total_env_step % self.env.model_update_step_freq == 0)&(self.env.opponent_policy=="self-play"):
+                self.env.model_update()
+            
+            # switch opponent policy in training
+            if (self.env.total_env_step % self.env.model_update_step_freq == 0):
+                self.env.switch_opponent_policy()
+
+        return obs, reward, is_game_over, {}
+
+    def reset(self):
+        """
+        :return:
+        """
+        self.env.current_step = 0
+        self.env.last_observation_object = None
+        self.last_unit_obs = self.learning_agent.last_unit_obs
+
+        # Reset game + map
+        self.env.match_controller.reset()
+        if self.env.replay_folder:
+            # Tell the game to log replays
+            self.env.game.start_replay_logging(stateful=True, replay_folder=self.env.replay_folder, replay_filename_prefix=self.env.replay_prefix)
+
+        self.env.match_generator = self.env.match_controller.run_to_next_observation()
+        (unit, city_tile, team, is_new_turn) = next(self.env.match_generator)
+
+        obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn, self.last_unit_obs)
+        self.env.last_observation_object = (unit, city_tile, team, is_new_turn)
+
+        return obs
+
+
 class LuxILEnvironment(gym.Env):
     """
     Custom Environment that follows gym interface
