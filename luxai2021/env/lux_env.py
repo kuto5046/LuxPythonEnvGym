@@ -284,7 +284,7 @@ class StackObsWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
         self.env = env
-        self.last_unit_obs = None 
+        self.last_unit_obs = None
         
     def step(self, action_code):
         """
@@ -311,6 +311,7 @@ class StackObsWrapper(gym.Wrapper):
             (unit, city_tile, team, is_new_turn) = next(self.env.match_generator)
             self.last_unit_obs = self.env.learning_agent.last_unit_obs
             obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn, self.last_unit_obs)
+            self.env.learning_agent.get_last_observation(obs)
             self.env.last_observation_object = (unit, city_tile, team, is_new_turn)
         except StopIteration:
             # The game episode is done.
