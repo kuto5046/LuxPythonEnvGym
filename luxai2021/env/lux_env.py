@@ -171,13 +171,13 @@ class LuxEnvironment(gym.Env):
         try:
             (unit, city_tile, team, is_new_turn) = next(self.match_generator)
 
-            # obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn, self.last_unit_obs)
             obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn)
             self.last_observation_object = (unit, city_tile, team, is_new_turn)
         except StopIteration:
             # The game episode is done.
             is_game_over = True
             obs = None
+            # obs = self.learning_agent.get_observation(self.game, None, None, self.last_observation_object[2], False)
         except GameStepFailedException:
             # Game step failed, assign a game lost reward to not incentivise this
             is_game_over = True
@@ -267,11 +267,11 @@ class LuxEnvironment(gym.Env):
         self.num_switch += 1
         p = random.random()
         current_opponent_policy = self.opponent_policy
-        if (p < 0.3)&("imitation" in self.opponent_agents.keys()):
+        if (p < 0.2)&("imitation" in self.opponent_agents.keys()):
             new_opponent_policy = "imitation"
-        elif (0.3 <= p)&(p < 0.4)&("random" in self.opponent_agents.keys()):
+        elif (0.2 <= p)&(p < 0.3)&("random" in self.opponent_agents.keys()):
             new_opponent_policy = "random"      
-        elif (0.4 <= p)&("self-play" in self.opponent_agents.keys()):
+        elif (0.3 <= p)&("self-play" in self.opponent_agents.keys()):
             new_opponent_policy = "self-play"
         
         if current_opponent_policy != new_opponent_policy:
@@ -280,7 +280,11 @@ class LuxEnvironment(gym.Env):
             print(f"[STEP: {self.total_env_step}] Switch opponent agent: {current_opponent_policy} -> {self.opponent_policy}")
 
 
-class StackObsWrapper(gym.Wrapper):
+class CustomEnvWrapper(gym.Wrapper):
+    """
+    stack
+    make obs
+    """
     def __init__(self, env):
         super().__init__(env)
         self.env = env
@@ -310,8 +314,13 @@ class StackObsWrapper(gym.Wrapper):
         try:
             (unit, city_tile, team, is_new_turn) = next(self.env.match_generator)
             self.last_unit_obs = self.env.learning_agent.last_unit_obs
-            obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn, self.last_unit_obs)
-            self.env.learning_agent.get_last_observation(obs)
+            if hasattr(self.env.learning_agent, "get_observation"):
+                base_obs = self.env.learning_agent.get_base_observation(self.env.game,  team, self.last_unit_obs)
+                obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn, base_obs)
+            else:
+                obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn)
+
+            self.env.learning_agent.get_last_observation(base_obs)
             self.env.last_observation_object = (unit, city_tile, team, is_new_turn)
         except StopIteration:
             # The game episode is done.
@@ -335,7 +344,8 @@ class StackObsWrapper(gym.Wrapper):
             if (self.env.total_env_step % self.env.model_update_step_freq == 0):
                 self.env.switch_opponent_policy()
 
-        return obs, reward, is_game_over, {}
+        # return obs, reward, is_game_over, {}
+        return obs, reward, is_game_over, self.env.learning_agent.rewards
 
     def reset(self):
         """
@@ -354,10 +364,13 @@ class StackObsWrapper(gym.Wrapper):
         self.env.match_generator = self.env.match_controller.run_to_next_observation()
         (unit, city_tile, team, is_new_turn) = next(self.env.match_generator)
 
-        obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn, self.last_unit_obs)
+        if hasattr(self.env.learning_agent, "get_observation"):
+            base_obs = self.env.learning_agent.get_base_observation(self.env.game,  team, self.last_unit_obs)
+            obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn, base_obs)
+        else:
+            obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn)
+
         self.env.last_observation_object = (unit, city_tile, team, is_new_turn)
 
         return obs
 
-
- 
