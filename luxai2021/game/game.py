@@ -325,7 +325,7 @@ class Game:
                 fuel = float(strings[3])
                 light_upkeep = float(strings[4])  # Unused
                 if assign:
-                    self.cities[city_id] = City(team, self.configs, None, city_id, fuel)
+                    self.cities[city_id] = City(team, self.configs, None, city_id, fuel, light_upkeep)
                 else:
                     assert city_id in self.cities
 

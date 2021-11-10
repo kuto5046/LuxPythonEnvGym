@@ -13,7 +13,7 @@ from .actions import *
 
 
 class City:
-    def __init__(self, team, configs, id_count, city_id=None, fuel=0):
+    def __init__(self, team, configs, id_count, city_id=None, fuel=0, light_upkeep=23):
         """
 
         :param team:
@@ -29,6 +29,7 @@ class City:
         else:
             self.id = "c_%i" % id_count
         self.fuel = fuel
+        self.light_upkeep = light_upkeep 
         self.city_cells = []
 
     def get_light_upkeep(self):
@@ -36,7 +37,8 @@ class City:
 
         :return:
         """
-        return len(self.city_cells) * self.configs["parameters"]["LIGHT_UPKEEP"]["CITY"] - self.get_adjacency_bonuses()
+        return self.light_upkeep
+        # return len(self.city_cells) * self.configs["parameters"]["LIGHT_UPKEEP"]["CITY"] - self.get_adjacency_bonuses()
 
     def get_adjacency_bonuses(self):
         """
