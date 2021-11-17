@@ -136,6 +136,7 @@ class LuxEnvironment(gym.Env):
 
         self.last_observation_object = None
         self.num_switch = 0
+        self.last_unit_obs = None
         
     def set_replay_path(self, replay_folder, replay_prefix):
         """
@@ -170,14 +171,19 @@ class LuxEnvironment(gym.Env):
         is_game_error = False
         try:
             (unit, city_tile, team, is_new_turn) = next(self.match_generator)
+            self.last_unit_obs = self.learning_agent.last_unit_obs
+            if hasattr(self.learning_agent, "get_observation"):
+                base_obs = self.learning_agent.get_base_observation(self.game,  team, self.last_unit_obs)
+                obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn, base_obs)
+            else:
+                obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn)
 
-            obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn)
+            self.learning_agent.get_last_observation(base_obs)
             self.last_observation_object = (unit, city_tile, team, is_new_turn)
         except StopIteration:
             # The game episode is done.
             is_game_over = True
             obs = None
-            # obs = self.learning_agent.get_observation(self.game, None, None, self.last_observation_object[2], False)
         except GameStepFailedException:
             # Game step failed, assign a game lost reward to not incentivise this
             is_game_over = True
@@ -196,7 +202,8 @@ class LuxEnvironment(gym.Env):
             if (self.total_env_step % self.model_update_step_freq == 0):
                 self.switch_opponent_policy()
 
-        return obs, reward, is_game_over, {}
+        # return obs, reward, is_game_over, {}
+        return obs, reward, is_game_over, self.learning_agent.rewards
 
     def reset(self):
         """
@@ -205,6 +212,7 @@ class LuxEnvironment(gym.Env):
         """
         self.current_step = 0
         self.last_observation_object = None
+        self.last_unit_obs = self.learning_agent.last_unit_obs
 
         # Reset game + map
         self.match_controller.reset()
@@ -215,9 +223,13 @@ class LuxEnvironment(gym.Env):
         self.match_generator = self.match_controller.run_to_next_observation()
         (unit, city_tile, team, is_new_turn) = next(self.match_generator)
 
-        obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn)
-        self.last_observation_object = (unit, city_tile, team, is_new_turn)
+        if hasattr(self.learning_agent, "get_observation"):
+            base_obs = self.learning_agent.get_base_observation(self.game,  team, self.last_unit_obs)
+            obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn, base_obs)
+        else:
+            obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn)
 
+        self.last_observation_object = (unit, city_tile, team, is_new_turn)
         return obs
 
     def render(self, **kwargs):
@@ -264,113 +276,18 @@ class LuxEnvironment(gym.Env):
             print(f"[STEP: {self.total_env_step}] Updated opponent model by learning agent model")
     
     def switch_opponent_policy(self):
+        new_opponent_policy = None 
         self.num_switch += 1
         p = random.random()
         current_opponent_policy = self.opponent_policy
-        if (p < 0.2)&("imitation" in self.opponent_agents.keys()):
+        if (p < 0.5)&("imitation" in self.opponent_agents.keys()):
             new_opponent_policy = "imitation"
-        elif (0.2 <= p)&(p < 0.3)&("random" in self.opponent_agents.keys()):
-            new_opponent_policy = "random"      
-        elif (0.3 <= p)&("self-play" in self.opponent_agents.keys()):
+        # elif (0.2 <= p)&(p < 0.3)&("random" in self.opponent_agents.keys()):
+        #     new_opponent_policy = "random"      
+        elif (0.5 <= p)&("self-play" in self.opponent_agents.keys()):
             new_opponent_policy = "self-play"
         
         if current_opponent_policy != new_opponent_policy:
             self.opponent_policy = new_opponent_policy
             self.opponent_agent = self.opponent_agents[self.opponent_policy]
             print(f"[STEP: {self.total_env_step}] Switch opponent agent: {current_opponent_policy} -> {self.opponent_policy}")
-
-
-class CustomEnvWrapper(gym.Wrapper):
-    """
-    stack
-    make obs
-    """
-    def __init__(self, env):
-        super().__init__(env)
-        self.env = env
-        self.last_unit_obs = None
-        
-    def step(self, action_code):
-        """
-        Take this action, then get the state at the next action
-        :param action_code:
-        :return:
-        """
-        # Decision for 1 unit or city
-        self.env.learning_agent.take_action(action_code,
-                                        self.game,
-                                        unit=self.env.last_observation_object[0],
-                                        city_tile=self.env.last_observation_object[1],
-                                        team=self.env.last_observation_object[2]
-                                        )
-
-        self.env.current_step += 1
-        self.env.total_env_step += 1
-
-        # Get the next observation
-        is_new_turn = True
-        is_game_over = False
-        is_game_error = False
-        try:
-            (unit, city_tile, team, is_new_turn) = next(self.env.match_generator)
-            self.last_unit_obs = self.env.learning_agent.last_unit_obs
-            if hasattr(self.env.learning_agent, "get_observation"):
-                base_obs = self.env.learning_agent.get_base_observation(self.env.game,  team, self.last_unit_obs)
-                obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn, base_obs)
-            else:
-                obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn)
-
-            self.env.learning_agent.get_last_observation(base_obs)
-            self.env.last_observation_object = (unit, city_tile, team, is_new_turn)
-        except StopIteration:
-            # The game episode is done.
-            is_game_over = True
-            obs = None
-        except GameStepFailedException:
-            # Game step failed, assign a game lost reward to not incentivise this
-            is_game_over = True
-            obs = None
-            is_game_error = True
-
-        # Calculate reward for this step
-        reward = self.env.learning_agent.get_reward(self.env.game, is_game_over, is_new_turn, is_game_error)
-
-        if self.env.model_update_step_freq != None:
-            # update opponent self-play model in training
-            if (self.env.total_env_step % self.env.model_update_step_freq == 0)&(self.env.opponent_policy=="self-play"):
-                self.env.model_update()
-            
-            # switch opponent policy in training
-            if (self.env.total_env_step % self.env.model_update_step_freq == 0):
-                self.env.switch_opponent_policy()
-
-        # return obs, reward, is_game_over, {}
-        return obs, reward, is_game_over, self.env.learning_agent.rewards
-
-    def reset(self):
-        """
-        :return:
-        """
-        self.env.current_step = 0
-        self.env.last_observation_object = None
-        self.last_unit_obs = self.learning_agent.last_unit_obs
-
-        # Reset game + map
-        self.env.match_controller.reset()
-        if self.env.replay_folder:
-            # Tell the game to log replays
-            self.env.game.start_replay_logging(stateful=True, replay_folder=self.env.replay_folder, replay_filename_prefix=self.env.replay_prefix)
-
-        self.env.match_generator = self.env.match_controller.run_to_next_observation()
-        (unit, city_tile, team, is_new_turn) = next(self.env.match_generator)
-
-        if hasattr(self.env.learning_agent, "get_observation"):
-            base_obs = self.env.learning_agent.get_base_observation(self.env.game,  team, self.last_unit_obs)
-            obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn, base_obs)
-        else:
-            obs = self.env.learning_agent.get_observation(self.env.game, unit, city_tile, team, is_new_turn)
-
-        self.env.last_observation_object = (unit, city_tile, team, is_new_turn)
-
-        return obs
-
