@@ -87,7 +87,8 @@ class LuxEnvironment(gym.Env):
         learning_agent, 
         opponent_agents, 
         initial_opponent_policy="self-play", 
-        model_update_step_freq=None, 
+        model_update_step_freq=None,
+        model_save_path=None,  
         replay_validate=None, 
         replay_folder=None, 
         replay_prefix="replay"
@@ -117,6 +118,7 @@ class LuxEnvironment(gym.Env):
         self.replay_prefix = replay_prefix
         self.replay_folder = replay_folder
         self.model_update_step_freq = model_update_step_freq
+        self.model_save_path = model_save_path 
 
         self.action_space = []
         if hasattr( learning_agent, 'action_space' ):
@@ -194,15 +196,10 @@ class LuxEnvironment(gym.Env):
         reward = self.learning_agent.get_reward(self.game, is_game_over, is_new_turn, is_game_error)
 
         if self.model_update_step_freq != None:
-            # update opponent self-play model in training
-            if (self.total_env_step % self.model_update_step_freq == 0)&(self.opponent_policy=="self-play"):
-                self.model_update()
-            
             # switch opponent policy in training
-            if (self.total_env_step % self.model_update_step_freq == 0):
+            if (len(self.opponent_agents) > 1)&(self.total_env_step % self.model_update_step_freq == 0):
                 self.switch_opponent_policy()
-
-        # return obs, reward, is_game_over, {}
+            
         return obs, reward, is_game_over, self.learning_agent.rewards
 
     def reset(self):
@@ -269,25 +266,37 @@ class LuxEnvironment(gym.Env):
 
         return is_game_error
     
-    def model_update(self):
-        # models = glob.glob(f'models/rl_model_*_steps.zip')
-        if self.learning_agent.model != None:  # train env
-            self.opponent_agent.model = copy.deepcopy(self.learning_agent.model)
-            print(f"[STEP: {self.total_env_step}] Updated opponent model by learning agent model")
+    def opponent_model_update(self):
+        # for self-play
+        if self.opponent_policy == 'self-play':
+            models = glob.glob(str(self.model_save_path)+'/rl_cnn_model_*_steps.onnx')
+            p = random.random()
+            if p < 0.5:  # sampling old model
+                pretrained_model_path = random.choice(models)
+            else:  # latest model
+                pretrained_model_path = sorted(models, key=lambda x: int(x.split('_')[-2]), reverse=True)[0]
+            self.opponent_agent.set_model(pretrained_model_path)
+
+        # for imitation agent
+        elif self.opponent_policy == 'imitation':
+            self.opponent_agent.set_model()
+
+    def is_valid_opponent_model_update(self):
+        return len(glob.glob(str(self.model_save_path)+'/rl_cnn_model_*_steps.onnx')) > 0
     
     def switch_opponent_policy(self):
-        new_opponent_policy = None 
+        current_opponent_policy = self.opponent_policy
+        new_opponent_policy = self.opponent_policy
         self.num_switch += 1
         p = random.random()
-        current_opponent_policy = self.opponent_policy
-        if (p < 0.5)&("imitation" in self.opponent_agents.keys()):
-            new_opponent_policy = "imitation"
-        # elif (0.2 <= p)&(p < 0.3)&("random" in self.opponent_agents.keys()):
-        #     new_opponent_policy = "random"      
-        elif (0.5 <= p)&("self-play" in self.opponent_agents.keys()):
+        # self-play modelを読み込むとkilledになる
+        if (p < 0.5)&("self-play" in self.opponent_agents.keys())&(self.is_valid_opponent_model_update()):
             new_opponent_policy = "self-play"
-        
+        elif (0.5 <= p)&("imitation" in self.opponent_agents.keys()):
+            new_opponent_policy = "imitation" 
+
         if current_opponent_policy != new_opponent_policy:
             self.opponent_policy = new_opponent_policy
             self.opponent_agent = self.opponent_agents[self.opponent_policy]
+            self.opponent_model_update()
             print(f"[STEP: {self.total_env_step}] Switch opponent agent: {current_opponent_policy} -> {self.opponent_policy}")
