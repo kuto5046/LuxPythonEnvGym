@@ -173,14 +173,13 @@ class LuxEnvironment(gym.Env):
         is_game_error = False
         try:
             (unit, city_tile, team, is_new_turn) = next(self.match_generator)
-            self.last_unit_obs = self.learning_agent.last_unit_obs
-            if hasattr(self.learning_agent, "get_observation"):
+            if hasattr(self.learning_agent, "get_base_observation"):
                 base_obs = self.learning_agent.get_base_observation(self.game,  team, self.last_unit_obs)
                 obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn, base_obs)
             else:
-                obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn)
+                obs = self.learning_agent.get_observation(self.game, unit, None, team)
 
-            self.learning_agent.get_last_observation(base_obs)
+            # self.learning_agent.get_last_observation(base_obs)
             self.last_observation_object = (unit, city_tile, team, is_new_turn)
         except StopIteration:
             # The game episode is done.
@@ -200,7 +199,7 @@ class LuxEnvironment(gym.Env):
             if (len(self.opponent_agents) > 1)&(self.total_env_step % self.model_update_step_freq == 0):
                 self.switch_opponent_policy()
             
-        return obs, reward, is_game_over, self.learning_agent.rewards
+        return obs, reward, is_game_over, {}  # self.learning_agent.rewards
 
     def reset(self):
         """
@@ -209,7 +208,6 @@ class LuxEnvironment(gym.Env):
         """
         self.current_step = 0
         self.last_observation_object = None
-        self.last_unit_obs = self.learning_agent.last_unit_obs
 
         # Reset game + map
         self.match_controller.reset()
@@ -220,12 +218,11 @@ class LuxEnvironment(gym.Env):
         self.match_generator = self.match_controller.run_to_next_observation()
         (unit, city_tile, team, is_new_turn) = next(self.match_generator)
 
-        if hasattr(self.learning_agent, "get_observation"):
+        if hasattr(self.learning_agent, "get_base_observation"):
             base_obs = self.learning_agent.get_base_observation(self.game,  team, self.last_unit_obs)
             obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn, base_obs)
-        else:
-            obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn)
-
+        else:  # for Unet
+            obs = self.learning_agent.get_observation(self.game, unit, city_tile, team)
         self.last_observation_object = (unit, city_tile, team, is_new_turn)
         return obs
 
@@ -269,7 +266,8 @@ class LuxEnvironment(gym.Env):
     def opponent_model_update(self):
         # for self-play
         if self.opponent_policy == 'self-play':
-            models = glob.glob(str(self.model_save_path)+'/rl_cnn_model_*_steps.onnx')
+            # models = glob.glob(str(self.model_save_path)+'/rl_cnn_model_*_steps.onnx')
+            models = glob.glob(str(self.model_save_path)+'/rl_cnn_model_*_steps.pth')
             p = random.random()
             if p < 0.5:  # sampling old model
                 pretrained_model_path = random.choice(models)
@@ -282,7 +280,8 @@ class LuxEnvironment(gym.Env):
             self.opponent_agent.set_model()
 
     def is_valid_opponent_model_update(self):
-        return len(glob.glob(str(self.model_save_path)+'/rl_cnn_model_*_steps.onnx')) > 0
+        # return len(glob.glob(str(self.model_save_path)+'/rl_cnn_model_*_steps.onnx')) > 0
+        return len(glob.glob(str(self.model_save_path)+'/rl_cnn_model_*_steps.pth')) > 0
     
     def switch_opponent_policy(self):
         current_opponent_policy = self.opponent_policy
